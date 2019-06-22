@@ -11,6 +11,16 @@ from aiohttp import web, ClientTimeout
 SELENIUM_TIMEOUT = ClientTimeout(total=int(os.getenv('SELENIUM_TIMEOUT', 300)))
 
 
+def error_on_timeout():
+    return web.json_response(data={
+        "value": {
+            "error": "timeout",
+            "message": "Exceeded set timeout",
+            "stacktrace": ""
+        }
+    }, status=500)
+
+
 def get_server_location(request: Request):
     session_id = request.match_info['session_id']
     server_string, _ = request.app['session_cache'].get(session_id)
@@ -20,16 +30,22 @@ def get_server_location(request: Request):
 
 async def handle_get(request: Request):
     url = get_server_location(request)
-    f = Forwarder(url, 'GET', None, request.headers)
-    resp, req = await f.forward(SELENIUM_TIMEOUT)
+    try:
+        f = Forwarder(url, 'GET', None, request.headers)
+        resp, req = await f.forward(SELENIUM_TIMEOUT)
+    except ClientTimeout:
+        return error_on_timeout()
     return web.json_response(resp, status=req.status)
 
 
 async def handle_post(request: Request):
     payload = await request.json()
     url = get_server_location(request)
-    f = Forwarder(url, 'POST', payload, request.headers)
-    resp, req = await f.forward(SELENIUM_TIMEOUT)
+    try:
+        f = Forwarder(url, 'POST', payload, request.headers)
+        resp, req = await f.forward(SELENIUM_TIMEOUT)
+    except ClientTimeout:
+        return error_on_timeout()
     return web.json_response(resp, status=req.status)
 
 
@@ -50,7 +66,10 @@ async def new_session(request):
     payload = await request.json()
     url = '{}/session'.format(hub.rstrip('/'))
     f = Forwarder(url, 'POST', payload, request.headers)
-    resp, req = await f.forward(SELENIUM_TIMEOUT)
+    try:
+        resp, req = await f.forward(SELENIUM_TIMEOUT)
+    except ClientTimeout:
+        return error_on_timeout()
     if 'sessionId' in resp:
         sess_id = resp['sessionId']
         request.app['session_cache'][sess_id] = (hub, dt.datetime.now())
@@ -66,7 +85,10 @@ async def delete_session(request: Request):
     session_id = request.match_info['session_id']
     url = get_server_location(request)
     f = Forwarder(url, 'DELETE', None, request.headers)
-    resp, req = await f.forward(SELENIUM_TIMEOUT)
+    try:
+        resp, req = await f.forward(SELENIUM_TIMEOUT)
+    except ClientTimeout:
+        return error_on_timeout()
     if session_id in request.app['session_cache']:
         request.app['session_cache'].pop(session_id)
     return web.json_response(resp)
