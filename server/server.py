@@ -1,5 +1,6 @@
 import asyncio
 import datetime as dt
+import os
 from typing import Any, Dict, Union
 
 from aiohttp import web
@@ -18,6 +19,14 @@ async def clean_dead_sessions(cache):
         await asyncio.sleep(5)
 
 
+def import_hub_manager(hub_klass: str):
+    components = hub_klass.split('.')
+    mod = __import__(components[0])
+    for comp in components[1:]:
+        mod = getattr(mod, comp)
+    return mod
+
+
 class WebApp:
 
     def __init__(self, host: str, port: int, loop: Union[None, asyncio.AbstractEventLoop]=None) -> None:
@@ -25,8 +34,9 @@ class WebApp:
         self.port = port
         self.loop = loop if loop else asyncio.get_event_loop()
 
-    async def create_app(self, hub_manager, configs: str):
+    async def create_app(self, configs: str):
         app = web.Application()
+        hub_manager = import_hub_manager(os.getenv('HUB_MANAGER_CLASS', 'hub.ApiManager'))
         app['selenium_hubs'] = hub_manager.from_json(configs)
         app['session_cache']: Dict[str, Any] = {}
         app.add_routes([
@@ -38,7 +48,7 @@ class WebApp:
         app = add_session_routes(app)
         return app
 
-    def run(self, hub_manager, configs: str):
+    def run(self, configs: str):
         loop = self.loop
-        app = loop.run_until_complete(self.create_app(hub_manager, configs))
+        app = loop.run_until_complete(self.create_app(configs))
         web.run_app(app, host=self.host, port=self.port)
